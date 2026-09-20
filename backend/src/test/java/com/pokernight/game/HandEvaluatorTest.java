@@ -10,4 +10,18 @@ class HandEvaluatorTest {
   @Test void aceTwoThreeIsValidLowestSequence() { assertEquals(HandCategory.SEQUENCE, HandEvaluator.evaluate(List.of(c(14,'S'),c(2,'H'),c(3,'D'))).category()); }
   @Test void threeTwoAceIsNotSequence() { assertEquals(HandCategory.HIGH_CARD, HandEvaluator.evaluate(List.of(c(3,'S'),c(2,'H'),c(14,'D'))).category()); }
   @Test void pairBeatsHighCard() { assertTrue(HandEvaluator.evaluate(List.of(c(8,'S'),c(8,'H'),c(2,'D'))).compareTo(HandEvaluator.evaluate(List.of(c(14,'S'),c(9,'H'),c(2,'D')))) > 0); }
+  @Test void coversAllStandardCategories() {
+    assertEquals(HandCategory.TRAIL, HandEvaluator.evaluate(List.of(c(7,'S'),c(7,'H'),c(7,'D'))).category());
+    assertEquals(HandCategory.PURE_SEQUENCE, HandEvaluator.evaluate(List.of(c(10,'S'),c(9,'S'),c(8,'S'))).category());
+    assertEquals(HandCategory.SEQUENCE, HandEvaluator.evaluate(List.of(c(10,'S'),c(9,'H'),c(8,'D'))).category());
+    assertEquals(HandCategory.COLOR, HandEvaluator.evaluate(List.of(c(14,'S'),c(9,'S'),c(4,'S'))).category());
+    assertEquals(HandCategory.PAIR, HandEvaluator.evaluate(List.of(c(5,'S'),c(5,'H'),c(2,'D'))).category());
+    assertEquals(HandCategory.HIGH_CARD, HandEvaluator.evaluate(List.of(c(14,'S'),c(9,'H'),c(4,'D'))).category());
+  }
+  @Test void rankTieBreakersAreDeterministic() {
+    var aceHigh = HandEvaluator.evaluate(List.of(c(14,'S'),c(9,'H'),c(4,'D')));
+    var kingHigh = HandEvaluator.evaluate(List.of(c(13,'S'),c(9,'H'),c(4,'D')));
+    assertTrue(aceHigh.compareTo(kingHigh) > 0);
+    assertEquals(0, HandEvaluator.evaluate(List.of(c(8,'S'),c(8,'H'),c(2,'D'))).compareTo(HandEvaluator.evaluate(List.of(c(8,'C'),c(8,'D'),c(2,'H')))));
+  }
 }

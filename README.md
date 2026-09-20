@@ -10,11 +10,29 @@ Invite-only, real-time Teen Patti prototype.
 ## Run
 
 1. Set `REDIS_URL` to the Redis URI supplied for this environment.
-2. Start backend: `cd backend; ./mvnw spring-boot:run` (Windows: `mvnw.cmd`).
+2. Start backend: `cd backend; mvn spring-boot:run`.
 3. Start frontend: `cd frontend; npm install; npm start`.
 4. Open `http://localhost:4200`.
 
-Default local identity is selected in the UI. Prototype auth uses a signed-in player ID supplied to the backend session; replace with JWT/OIDC before production.
+### Container stack
+
+Build the backend artifact, then run the production-shaped nginx stack:
+
+```bash
+cd backend && mvn -DskipTests package
+cd ..
+REDIS_URL='redis://default:<password>@<redis-host>:<port>' docker compose up --build
+```
+
+Open `http://localhost:8088`. Nginx serves the SPA and proxies `/api` plus upgraded `/ws` traffic to the backend. Redis remains external.
+
+Browser smoke test, with backend and frontend already running: `cd frontend; npm run e2e:smoke`. Requires Python Playwright/Chromium.
+
+The prototype binds WebSocket actions to a server-side session principal derived from the invite/player connection. Replace the development query principal with JWT/OIDC before production.
+
+The backend stores table state in Redis keys `table:{id}:state`, action events in `:actions`, chip events in `:ledger`, and idempotency markers in `:accepted_actions`/`:settlements`. Configure managed Redis with TLS, AOF `appendfsync everysec`, RDB snapshots, backups, and eviction disabled.
+
+Redis operational baseline: [ops/redis.conf.example](ops/redis.conf.example), [ops/README.md](ops/README.md).
 
 ## Pinned toolchain
 

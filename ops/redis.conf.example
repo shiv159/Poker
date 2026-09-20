@@ -1,0 +1,10 @@
+# Prototype Redis durability/security baseline from PRD.
+appendonly yes
+appendfsync everysec
+save 900 1
+save 300 10
+save 60 10000
+maxmemory-policy noeviction
+
+# Production managed Redis must provide TLS and ACL authentication.
+# Configure certificates/ACLs in the provider, not in this example file.

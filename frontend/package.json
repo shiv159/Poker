@@ -2,7 +2,7 @@
   "name": "poker-night-frontend",
   "version": "0.1.0",
   "private": true,
-  "scripts": { "start": "ng serve", "build": "ng build", "test": "ng test --watch=false" },
+  "scripts": { "start": "ng serve", "build": "ng build", "test": "ng test --watch=false", "e2e:smoke": "python e2e/smoke.spec.py" },
   "dependencies": { "@angular/animations": "20.3.0", "@angular/common": "20.3.0", "@angular/compiler": "20.3.0", "@angular/core": "20.3.0", "@angular/forms": "20.3.0", "@angular/platform-browser": "20.3.0", "@angular/platform-browser-dynamic": "20.3.0", "@angular/router": "20.3.0", "@ionic/angular": "8.7.5", "ionicons": "7.4.0", "rxjs": "7.8.2", "zone.js": "0.15.1" },
   "devDependencies": { "@angular-devkit/build-angular": "20.3.0", "@angular/cli": "20.3.0", "@angular/compiler-cli": "20.3.0", "typescript": "5.9.2" }
 }

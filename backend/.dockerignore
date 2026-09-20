@@ -1,0 +1,6 @@
+target/*.original
+target/test-classes
+target/maven-status
+target/surefire-reports
+.git
+.idea

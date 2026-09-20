@@ -1,0 +1,18 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      REDIS_URL: ${REDIS_URL:?Set REDIS_URL before starting}
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080; printf \"GET /api/tables/health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3; grep -q \"200\" <&3'"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8088:80"

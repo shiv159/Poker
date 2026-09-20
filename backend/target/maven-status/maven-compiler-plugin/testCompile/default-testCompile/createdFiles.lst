@@ -1,1 +1,5 @@
+com\pokernight\game\JackDealerTest.class
 com\pokernight\game\HandEvaluatorTest.class
+com\pokernight\game\DeckTest.class
+com\pokernight\table\RecoveryServiceTest.class
+com\pokernight\game\VariantEvaluatorTest.class

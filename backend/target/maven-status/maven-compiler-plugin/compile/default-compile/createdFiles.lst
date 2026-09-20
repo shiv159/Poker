@@ -1,0 +1,13 @@
+com\pokernight\table\TableController$CreateRequest.class
+com\pokernight\ws\TableWebSocketHandler.class
+com\pokernight\PokerNightApplication.class
+com\pokernight\config\WebConfig.class
+com\pokernight\table\TableController.class
+com\pokernight\config\WebSocketConfig.class
+com\pokernight\game\Card.class
+com\pokernight\game\HandEvaluator.class
+com\pokernight\game\HandCategory.class
+com\pokernight\game\EvaluatedHand.class
+com\pokernight\game\GameVariant.class
+com\pokernight\table\TableService.class
+com\pokernight\table\TableController$JoinRequest.class

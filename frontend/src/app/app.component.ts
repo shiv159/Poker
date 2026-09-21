@@ -3,8 +3,9 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { IonicModule } from '@ionic/angular';
 import { Seat, TableService } from './table.service';
+import { PlayingCardComponent } from './playing-card.component';
 
-@Component({ selector: 'pn-root', standalone: true, imports: [CommonModule, FormsModule, IonicModule], templateUrl: './app.component.html', styleUrl: './app.component.css' })
+@Component({ selector: 'pn-root', standalone: true, imports: [CommonModule, FormsModule, IonicModule, PlayingCardComponent], templateUrl: './app.component.html', styleUrl: './app.component.css' })
 export class AppComponent {
   playerId = localStorage.getItem('poker.playerId') ?? 'player-' + Math.floor(Math.random() * 900 + 100); displayName = localStorage.getItem('poker.displayName') ?? 'Player'; tableCode = localStorage.getItem('poker.tableId') ?? ''; tableName = 'Friday Night Table'; selectedSeat = 1; transferTarget = ''; variant = 'CLASSIC'; variants = ['CLASSIC', 'SWAP', 'IMAGINARY', 'COMPULSORY_THIRD', 'EXCHANGE_AND_FOLD', 'FOUR_CARD']; joined = signal(false); inviteLink = signal(''); remaining = signal(30); timerClass = computed(() => !this.isMyTurn() ? 'idle' : this.remaining() < 10 ? 'danger' : this.remaining() < 20 ? 'warn' : 'safe');
   private clock = window.setInterval(() => this.tick(), 250);
@@ -36,7 +37,7 @@ export class AppComponent {
   private persistSession(): void { localStorage.setItem('poker.playerId', this.playerId); localStorage.setItem('poker.displayName', this.displayName); localStorage.setItem('poker.tableId', this.tableCode); const token = this.game.snapshot()?.sessionToken; if (token) localStorage.setItem('poker.sessionToken', token); }
   seats(): number[] { return Array.from({ length: 8 }, (_, i) => i); }
   occupied(seat: number): any { return this.game.snapshot()?.seats.find(s => s.seat === seat); }
-  myCards(): any[] { return this.game.snapshot()?.seats.find(s => s.playerId === this.playerId)?.privateCards ?? []; }
+  myCards(): any[] { const seat = this.mySeat(); if (!seat) return []; return seat.privateCards?.length ? seat.privateCards : Array.from({ length: seat.privateCardCount ?? this.privateCardCount() }, () => null); }
   privateCardCount(): number { const variant = this.game.snapshot()?.hand?.variant; return variant === 'IMAGINARY' || variant === 'COMPULSORY_THIRD' ? 2 : variant === 'FOUR_CARD' ? 4 : 3; }
   private tick(): void { const deadline = this.game.snapshot()?.hand?.actionDeadline; this.remaining.set(deadline ? Math.max(0, Math.ceil((Date.parse(deadline) - Date.now()) / 1000)) : 30); }
 }

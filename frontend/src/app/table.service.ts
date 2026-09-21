@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 
-export interface Seat { seat: number; playerId: string; displayName: string; balance: number; debt: number; status: string; connected: boolean; privateCards?: { rank: number; suit: string; label?: string }[]; }
+export interface Seat { seat: number; playerId: string; displayName: string; balance: number; debt: number; status: string; connected: boolean; privateCards?: { rank: number; suit: string; label?: string }[]; privateCardCount?: number; cardsHidden?: boolean; }
 export interface Snapshot { table: Record<string, any>; seats: Seat[]; hand?: { pot: number; settledPot?: number; currentChaal: number; completedRounds: number; currentSeat: number; actionDeadline?: string; status: string; variant: string; winnerId?: string; dealerId?: string; communityCards: { rank: number; suit: string; label?: string }[]; pendingSideshowRequesterId?: string; pendingSideshowResponderId?: string; }; pendingTransfer?: { requesterId: string; giverId: string } | null; sessionToken?: string; }
 
 @Injectable({ providedIn: 'root' })
@@ -19,11 +19,12 @@ export class TableService {
   }
   private openSocket(): void {
     if (this.reconnectTimer) window.clearTimeout(this.reconnectTimer);
-    this.socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/table?tableId=${encodeURIComponent(this.tableId)}&sessionToken=${encodeURIComponent(this.sessionToken)}`);
-    this.socket.onopen = () => { this.reconnectAttempts = 0; this.connected.set(true); };
-    this.socket.onerror = () => { if (!this.connected()) this.error.set('TABLE_CONNECTION_FAILED'); };
-    this.socket.onclose = () => { this.connected.set(false); if (this.reconnectAttempts < 5) { this.reconnectAttempts++; this.reconnectTimer = window.setTimeout(() => this.openSocket(), 1000); } else this.error.set('SESSION_EXPIRED_OR_TABLE_UNAVAILABLE'); };
-    this.socket.onmessage = event => { const message = JSON.parse(event.data) as { type: string; payload?: Snapshot; code?: string }; if (message.payload) { this.snapshot.set(message.payload); this.actionPending.set(false); } if (message.type === 'ERROR') { this.actionPending.set(false); this.error.set(message.code ?? 'Unknown error'); if (message.code === 'STALE_STATE_REJECTED') this.socket?.send(JSON.stringify({ type: 'FULL_STATE_SYNC', tableId: this.tableId })); } };
+    const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/table?tableId=${encodeURIComponent(this.tableId)}&sessionToken=${encodeURIComponent(this.sessionToken)}`);
+    this.socket = socket;
+    socket.onopen = () => { if (this.socket !== socket) return; this.reconnectAttempts = 0; this.connected.set(true); };
+    socket.onerror = () => { if (this.socket === socket && !this.connected()) this.error.set('TABLE_CONNECTION_FAILED'); };
+    socket.onclose = () => { if (this.socket !== socket) return; this.connected.set(false); if (this.reconnectAttempts < 5) { this.reconnectAttempts++; this.reconnectTimer = window.setTimeout(() => this.openSocket(), 1000); } else this.error.set('SESSION_EXPIRED_OR_TABLE_UNAVAILABLE'); };
+    socket.onmessage = event => { if (this.socket !== socket) return; const message = JSON.parse(event.data) as { type: string; payload?: Snapshot; code?: string }; if (message.payload) { this.snapshot.set(message.payload); this.actionPending.set(false); this.error.set(''); } if (message.type === 'ERROR') { this.actionPending.set(false); this.error.set(message.code ?? 'Unknown error'); if (message.code === 'STALE_STATE_REJECTED') socket.send(JSON.stringify({ type: 'FULL_STATE_SYNC', tableId: this.tableId })); } };
   }
   action(type: string, playerId: string, data: Record<string, unknown> = {}): void { const current = this.snapshot(); if (!current || !this.socket || this.actionPending()) return; this.actionPending.set(true); this.socket.send(JSON.stringify({ tableId: current.table['tableId'], playerId, actionId: crypto.randomUUID(), stateVersion: current.table['stateVersion'], type, ...data })); }
   private showHttpError(error: unknown): void { const response = error as HttpErrorResponse; const code = response?.error?.code; this.error.set(code ?? (response?.status === 404 ? 'TABLE_NOT_FOUND' : 'REQUEST_FAILED')); }

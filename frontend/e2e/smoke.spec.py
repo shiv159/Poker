@@ -57,9 +57,12 @@ async def main() -> None:
         await page.screenshot(path="artifacts/dealer-selection-started.png", full_page=True)
         await page.get_by_role("button", name="SHARE INVITE").click()
         assert await page.locator(".invite-popover").count() == 1
+        invite_value = await page.locator(".invite-popover input").input_value()
+        assert invite_value.startswith("http") and f"table={table_code}" in invite_value
+        assert await page.locator(".invite-open").get_attribute("href") == invite_value
         turn_page = page if await page.locator(".turn-card.your-turn").count() else guest_page
         await turn_page.get_by_role("button", name="VIEW PRIVATE CARDS").click()
-        assert await page.locator(".invite-popover").count() == 0
+        assert await turn_page.locator(".invite-popover").count() == 0
         await guest_page.reload(wait_until="domcontentloaded")
         await guest_page.get_by_text("LIVE TABLE").wait_for(timeout=10_000)
         await page.screenshot(path=str(Path(tempfile.gettempdir()) / "poker-night-table.png"), full_page=True)

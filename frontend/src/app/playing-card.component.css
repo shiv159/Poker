@@ -1,0 +1,10 @@
+:host { display: inline-block; perspective: 700px; }
+.playing-card { position: relative; display: block; aspect-ratio: 2.5 / 3.5; width: 52px; overflow: hidden; border: 1px solid #d6d5cc; border-radius: 5px; background: #f7f4eb; color: #161b22; box-shadow: 0 5px 12px #0005; transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease; animation: card-settle 320ms ease both; }
+.card-sm { width: 38px; border-radius: 3px; }.card-lg { width: 76px; border-radius: 7px; }
+.playing-card:hover, .card-emphasized { transform: translateY(-5px) rotate(-1deg); box-shadow: 0 12px 20px #0007; }
+.card-red { color: #bb4050; }.card-joker { background: linear-gradient(135deg, #fff8dd, #e8f0dc); color: #25755f; }
+.corner { position: absolute; z-index: 1; display: grid; justify-items: center; font: 700 12px/1 Georgia, serif; }.corner i { font-style: normal; font-size: 11px; }.top { inset: 6px auto auto 6px; }.bottom { inset: auto 6px 6px auto; transform: rotate(180deg); }
+.center-suit { position: absolute; inset: 0; display: grid; place-items: center; font-size: 30px; opacity: .9; }.card-lg .center-suit { font-size: 43px; }
+.card-hidden { border-color: #b9a665; background: #1c3340; color: #e9b85c; }.back-pattern { position: absolute; inset: 4px; border: 1px solid #e9b85c99; border-radius: 3px; background: repeating-linear-gradient(45deg, #e9b85c18 0 2px, transparent 2px 6px), repeating-linear-gradient(-45deg, #e9b85c12 0 2px, transparent 2px 6px); }.back-mark { position: absolute; inset: 0; display: grid; place-items: center; font-size: 24px; color: #e9b85c; }
+@keyframes card-settle { from { opacity: 0; transform: translateY(-12px) rotate(3deg) scale(.96); } to { opacity: 1; transform: translateY(0) rotate(0) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .playing-card { animation: none; transition: none; } }

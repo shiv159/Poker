@@ -1,0 +1,10 @@
+<div class="playing-card" [class]="'card-' + size()" [class.card-red]="isRed()" [class.card-joker]="isJoker()" [class.card-hidden]="!faceUp()" [class.card-emphasized]="emphasized()" role="img" [attr.aria-label]="ariaLabel()">
+  @if (faceUp() && card()) {
+    <span class="corner top"><b>{{ rank() }}</b><i>{{ suit() }}</i></span>
+    <span class="center-suit" aria-hidden="true">{{ suit() }}</span>
+    <span class="corner bottom"><b>{{ rank() }}</b><i>{{ suit() }}</i></span>
+  } @else {
+    <span class="back-pattern" aria-hidden="true"></span>
+    <span class="back-mark" aria-hidden="true">♠</span>
+  }
+</div>

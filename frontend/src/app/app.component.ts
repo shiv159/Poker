@@ -1,4 +1,4 @@
-import { Component, computed, signal } from '@angular/core';
+import { Component, computed, signal, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { IonicModule } from '@ionic/angular';
@@ -6,7 +6,7 @@ import { Seat, TableService } from './table.service';
 import { PlayingCardComponent } from './playing-card.component';
 
 @Component({ selector: 'pn-root', standalone: true, imports: [CommonModule, FormsModule, IonicModule, PlayingCardComponent], templateUrl: './app.component.html', styleUrl: './app.component.css' })
-export class AppComponent {
+export class AppComponent implements OnDestroy {
   playerId = localStorage.getItem('poker.playerId') ?? 'player-' + Math.floor(Math.random() * 900 + 100); displayName = localStorage.getItem('poker.displayName') ?? 'Player'; tableCode = localStorage.getItem('poker.tableId') ?? ''; tableName = 'Friday Night Table'; selectedSeat = 1; transferTarget = ''; variant = 'CLASSIC'; variants = ['CLASSIC', 'SWAP', 'IMAGINARY', 'COMPULSORY_THIRD', 'EXCHANGE_AND_FOLD', 'FOUR_CARD']; joined = signal(false); inviteLink = signal(''); remaining = signal(30); timerClass = computed(() => !this.isMyTurn() ? 'idle' : this.remaining() < 10 ? 'danger' : this.remaining() < 20 ? 'warn' : 'safe');
   private clock = window.setInterval(() => this.tick(), 250);
   constructor(public game: TableService) { const inviteCode = new URLSearchParams(location.search).get('table'); if (inviteCode) this.tableCode = inviteCode.toUpperCase(); const token = localStorage.getItem('poker.sessionToken'); const savedTable = localStorage.getItem('poker.tableId'); if (this.tableCode && token && savedTable === this.tableCode) this.restoreExistingSession(this.tableCode, token); }
@@ -16,6 +16,8 @@ export class AppComponent {
   async shareInvite(): Promise<void> { const code = this.game.snapshot()?.table?.['tableId']; if (!code) return; this.inviteLink.set(`${location.origin}/?table=${encodeURIComponent(code)}`); await this.copyInviteLink(); }
   async copyInviteLink(): Promise<void> { const link = this.inviteLink(); if (!link) return; try { await navigator.clipboard.writeText(link); this.game.error.set('INVITE_LINK_COPIED'); } catch { this.game.error.set('INVITE_LINK_READY_TO_COPY'); } }
   act(type: string, data: Record<string, unknown> = {}): void { const turnActions = ['VIEW_CARDS', 'FOLD', 'CHAAL', 'RAISE', 'SIDESHOW', 'SHOW', 'FUND_AND_WAGER', 'BANK_ALLOCATE', 'PLAYER_TRANSFER_REQUEST']; if (this.isHandActive() && !this.isMyTurn() && turnActions.includes(type)) return; this.inviteLink.set(''); this.game.action(type, this.playerId, data); }
+  imBack(): void { this.act('IM_BACK'); }
+  raiseAmount = 5;
   selectVariant(): void { this.act('START_NEXT_HAND'); }
   chooseVariant(value: string): void { this.variant = value; const hand = this.game.snapshot()?.hand; if (this.isDealer() && (!hand || hand.status === 'COMPLETED')) this.act('SET_VARIANT', { variant: value }); }
   isSideshowResponder(): boolean { return this.game.snapshot()?.hand?.pendingSideshowResponderId === this.playerId; }
@@ -31,7 +33,7 @@ export class AppComponent {
   startLabel(): string { return this.game.snapshot()?.hand ? 'START NEXT HAND' : 'START GAME'; }
   selectedVariant(): string { return this.game.snapshot()?.table?.['selectedVariant'] ?? this.game.snapshot()?.hand?.variant ?? this.variant; }
   statusMessage(): string { if (this.game.error()) return this.game.error(); if (!this.game.connected()) return 'Connecting to table'; if (!this.isHandActive()) { if (!this.game.snapshot()?.hand && this.game.snapshot()?.table?.['status'] === 'WAITING_FOR_DEALER') return this.isDealer() ? 'You are the dealer · choose a game type and start the game' : 'Dealer is choosing the game type'; const connectedPlayers = this.game.snapshot()?.seats.filter(seat => seat.connected && seat.status === 'ELIGIBLE').length ?? 0; if (connectedPlayers < 2) return `Waiting for ${2 - connectedPlayers} more connected player${2 - connectedPlayers === 1 ? '' : 's'} · dealer selection starts after the second player joins`; return this.game.snapshot()?.hand?.status === 'COMPLETED' ? `Hand complete · ${this.isDealer() ? 'choose a game type and start next hand' : 'waiting for dealer'}` : 'Waiting for players'; } return this.isMyTurn() ? 'Your turn · choose an action' : `${this.turnName()}'s turn · actions locked`; }
-  gameTypeHint(): string { const snapshot = this.game.snapshot(); const connectedPlayers = snapshot?.seats.filter(seat => seat.connected && seat.status === 'ELIGIBLE').length ?? 0; if (connectedPlayers < 2) return `Waiting for ${2 - connectedPlayers} more connected player${2 - connectedPlayers === 1 ? '' : 's'}. The dealer is chosen from the opening Jack or Joker deal.`; if (!this.isDealer()) return `Only ${this.dealerName()} can choose the game type. Your screen will update automatically.`; if (snapshot?.hand?.status === 'IN_PROGRESS') return 'Game type is locked while a hand is in progress.'; return 'Choose a game type, then press Start Game.'; }
+  gameTypeHint(): string { const snapshot = this.game.snapshot(); const connectedPlayers = snapshot?.seats.filter(seat => seat.connected && seat.status === 'ELIGIBLE').length ?? 0; if (connectedPlayers < 2) return `Waiting for ${2 - connectedPlayers} more connected player${2 - connectedPlayers === 1 ? '' : 's'}. The dealer is chosen from the opening Jack deal.`; if (!this.isDealer()) return `Only ${this.dealerName()} can choose the game type. Your screen will update automatically.`; if (snapshot?.hand?.status === 'IN_PROGRESS') return 'Game type is locked while a hand is in progress.'; return 'Choose a game type, then press Start Game.'; }
   isTransferGiver(): boolean { return this.game.snapshot()?.pendingTransfer?.giverId === this.playerId; }
   isTransferRequester(): boolean { return this.game.snapshot()?.pendingTransfer?.requesterId === this.playerId; }
   private persistSession(): void { localStorage.setItem('poker.playerId', this.playerId); localStorage.setItem('poker.displayName', this.displayName); localStorage.setItem('poker.tableId', this.tableCode); const token = this.game.snapshot()?.sessionToken; if (token) localStorage.setItem('poker.sessionToken', token); }
@@ -39,5 +41,6 @@ export class AppComponent {
   occupied(seat: number): any { return this.game.snapshot()?.seats.find(s => s.seat === seat); }
   myCards(): any[] { const seat = this.mySeat(); if (!seat) return []; return seat.privateCards?.length ? seat.privateCards : Array.from({ length: seat.privateCardCount ?? this.privateCardCount() }, () => null); }
   privateCardCount(): number { const variant = this.game.snapshot()?.hand?.variant; return variant === 'IMAGINARY' || variant === 'COMPULSORY_THIRD' ? 2 : variant === 'FOUR_CARD' ? 4 : 3; }
-  private tick(): void { const deadline = this.game.snapshot()?.hand?.actionDeadline; this.remaining.set(deadline ? Math.max(0, Math.ceil((Date.parse(deadline) - Date.now()) / 1000)) : 30); }
+  private tick(): void { const deadline = this.game.snapshot()?.hand?.actionDeadline; this.remaining.set(deadline ? Math.max(0, Math.ceil((Date.parse(deadline) - Date.now()) / 1000)) : 0); }
+  ngOnDestroy(): void { window.clearInterval(this.clock); }
 }

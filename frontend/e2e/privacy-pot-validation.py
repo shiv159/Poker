@@ -43,7 +43,7 @@ async def main():
         assert await host.locator(".my-cards [aria-label='Hidden playing card']").count() == 3
         assert await guest.locator(".my-cards [aria-label='Hidden playing card']").count() == 3
         turn = host if await host.locator(".turn-card.your-turn").count() else guest
-        await turn.get_by_role("button", name="VIEW PRIVATE CARDS").click()
+        await turn.get_by_role("button", name="View private hole cards").click()
         await turn.locator(".my-cards [aria-label$='of spades'], .my-cards [aria-label$='of hearts'], .my-cards [aria-label$='of diamonds'], .my-cards [aria-label$='of clubs']").first.wait_for(timeout=5000)
         assert await turn.locator(".my-cards [aria-label='Hidden playing card']").count() == 0
         pot_before = int((await host.locator(".pot strong").inner_text()).strip())

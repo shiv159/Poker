@@ -34,7 +34,12 @@ public final class VariantEvaluator {
     Card source = cards.get(at);
     EvaluatedHand best = swapSearch(cards, indexes, at + 1, append(current, source));
     if (indexes.contains(at)) for (char suit : new char[]{'S','H','D','C'}) for (int rank=2; rank<=14; rank++) {
-      EvaluatedHand candidate = swapSearch(cards, indexes, at + 1, append(current, new Card(rank, suit))); if (candidate.compareTo(best) > 0) best = candidate;
+      Card replacement = new Card(rank, suit);
+      if (current.contains(replacement)) continue;
+      boolean duplicate = false;
+      for (int j = at + 1; j < cards.size(); j++) if (!indexes.contains(j) && cards.get(j).equals(replacement)) { duplicate = true; break; }
+      if (duplicate) continue;
+      EvaluatedHand candidate = swapSearch(cards, indexes, at + 1, append(current, replacement)); if (candidate.compareTo(best) > 0) best = candidate;
     }
     return best;
   }

@@ -34,7 +34,7 @@ async def main() -> None:
         await guest_page.locator("select").select_option(index=2)
         await guest_page.get_by_role("button", name="JOIN THE TABLE").click()
         await guest_page.get_by_text("LIVE TABLE").wait_for(timeout=10_000)
-        assert await page.locator(".seat-chip").count() >= 2
+        assert await page.locator(".seat.occupied").count() >= 2
         dealer_start = page.locator("button.next-hand:not([disabled])")
         guest_dealer_start = guest_page.locator("button.next-hand:not([disabled])")
         for _ in range(20):
@@ -44,7 +44,10 @@ async def main() -> None:
         assert await dealer_start.count() + await guest_dealer_start.count() == 1
         dealer_page = page if await dealer_start.count() else guest_page
         await dealer_page.locator(".variant-select").select_option("SWAP")
-        await page.wait_for_timeout(700)
+        for _ in range(20):
+            if await page.locator(".variant-select").input_value() == "SWAP" and await guest_page.locator(".variant-select").input_value() == "SWAP":
+                break
+            await page.wait_for_timeout(250)
         assert await page.locator(".variant-select").input_value() == "SWAP"
         assert await guest_page.locator(".variant-select").input_value() == "SWAP"
         await dealer_page.locator("button.next-hand:not([disabled])").click()
@@ -55,13 +58,13 @@ async def main() -> None:
         assert "DEALER" in await page.locator(".table-info").inner_text()
         assert "TURN" in await page.locator(".table-info").inner_text() or "TURN" in await guest_page.locator(".table-info").inner_text()
         await page.screenshot(path="artifacts/dealer-selection-started.png", full_page=True)
-        await page.get_by_role("button", name="SHARE INVITE").click()
+        await page.get_by_role("button", name="Share table invite link").click()
         assert await page.locator(".invite-popover").count() == 1
         invite_value = await page.locator(".invite-popover input").input_value()
         assert invite_value.startswith("http") and f"table={table_code}" in invite_value
         assert await page.locator(".invite-open").get_attribute("href") == invite_value
         turn_page = page if await page.locator(".turn-card.your-turn").count() else guest_page
-        await turn_page.get_by_role("button", name="VIEW PRIVATE CARDS").click()
+        await turn_page.get_by_role("button", name="View private hole cards").click()
         assert await turn_page.locator(".invite-popover").count() == 0
         await guest_page.reload(wait_until="domcontentloaded")
         await guest_page.get_by_text("LIVE TABLE").wait_for(timeout=10_000)

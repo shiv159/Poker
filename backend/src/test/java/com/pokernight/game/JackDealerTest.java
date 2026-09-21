@@ -19,16 +19,6 @@ class JackDealerTest {
   }
 
   @Test
-  void firstJokerToConnectedEligibleSeatWins() {
-    SeatState first = new SeatState(0, "p1", "One", 100);
-    SeatState second = new SeatState(1, "p2", "Two", 100);
-    List<Card> cards = List.of(new Card(10, 'C'), new Card(15, 'X'));
-    AtomicInteger index = new AtomicInteger();
-
-    assertEquals("p2", JackDealer.findDealer(List.of(first, second), () -> cards.get(index.getAndIncrement()), () -> {}));
-  }
-
-  @Test
   void jackToDisconnectedSeatIsInvalidated() {
     SeatState disconnected = new SeatState(0, "p1", "One", 100);
     disconnected.connected = false;

@@ -82,11 +82,11 @@ Valid actions are `BLIND`, `CHAAL`, `RAISE`, `SHOW` when permitted, and `FOLD`. 
 - A player may view their cards before acting and becomes Seen. A Seen player pays twice the current chaal for a Chaal.
 - A raise increases the current chaal by the selected raise amount, but `S` may not exceed `MAX_CHAAL`.
 - The next Blind player owes the new current chaal `S`; the next Seen player owes `2S`.
-- A player's required payment is reduced by that player's contribution already made during the hand.
+- Every turn requires a fresh payment: Blind pays `S`; Seen pays `2S`. Prior contribution never reduces the current-turn payment.
 - A betting round is complete after every active player has received one turn.
 - After `MAX_BETTING_ROUNDS` completed betting rounds, betting stops and a forced showdown begins.
 
-A player may remain Blind for a maximum of four turns. On the fifth turn, the backend changes the player to Seen and reveals their private cards.
+A player may remain Blind for a maximum of two turns. On the third turn, the backend changes the player to Seen, reveals their private cards, and charges the Seen rate of `2S`.
 
 ### 3.3 Custom insufficient-balance and borrowing rule
 
@@ -235,7 +235,7 @@ Three private cards. Highest standard three-card hand wins.
 
 ### 6.1 Jack Deal
 
-- The server deals one face-up card sequentially per connected eligible seat, clockwise from the first seat.
+- The server deals one face-up card sequentially per connected eligible seat, clockwise from the first seat, from a standard 52-card deck containing exactly four Jacks and no Jokers.
 - Dealing stops immediately when the first Jack is dealt to an eligible connected seat.
 - That seat becomes the Dealer.
 - A Jack dealt to a disconnected seat is permanently invalidated and cannot establish the Dealer.

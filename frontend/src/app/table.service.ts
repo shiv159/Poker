@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 
-export interface Seat { seat: number; playerId: string; displayName: string; balance: number; debt: number; status: string; connected: boolean; privateCards?: { rank: number; suit: string; label?: string }[]; privateCardCount?: number; cardsHidden?: boolean; }
+export interface Seat { seat: number; playerId: string; displayName: string; balance: number; debt: number; status: 'ELIGIBLE' | 'SITTING_OUT' | 'SPECTATOR' | 'DISCONNECTED'; connected: boolean; actedThisHand?: boolean; privateCards?: { rank: number; suit: string; label?: string }[]; privateCardCount?: number; cardsHidden?: boolean; }
 export interface Snapshot { table: Record<string, any>; seats: Seat[]; hand?: { pot: number; settledPot?: number; currentChaal: number; completedRounds: number; currentSeat: number; actionDeadline?: string; status: string; variant: string; winnerId?: string; dealerId?: string; communityCards: { rank: number; suit: string; label?: string }[]; pendingSideshowRequesterId?: string; pendingSideshowResponderId?: string; }; pendingTransfer?: { requesterId: string; giverId: string } | null; sessionToken?: string; }
 
 @Injectable({ providedIn: 'root' })

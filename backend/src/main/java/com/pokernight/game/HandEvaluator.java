@@ -11,7 +11,7 @@ public final class HandEvaluator {
     Map<Integer, Long> counts = cards.stream().collect(java.util.stream.Collectors.groupingBy(Card::rank, java.util.stream.Collectors.counting()));
     if (counts.size() == 1) return new EvaluatedHand(HandCategory.TRAIL, List.of(ranks.get(0)));
     boolean pure = cards.stream().map(Card::suit).distinct().count() == 1;
-    List<Integer> sequence = sequenceRanks(ranks, cards);
+    List<Integer> sequence = sequenceRanks(ranks);
     if (sequence != null) return new EvaluatedHand(pure ? HandCategory.PURE_SEQUENCE : HandCategory.SEQUENCE, sequence);
     if (pure) return new EvaluatedHand(HandCategory.COLOR, ranks);
     if (counts.containsValue(2L)) {
@@ -22,10 +22,9 @@ public final class HandEvaluator {
     return new EvaluatedHand(HandCategory.HIGH_CARD, ranks);
   }
 
-  private static List<Integer> sequenceRanks(List<Integer> ranks, List<Card> cards) {
-    List<Integer> input = cards.stream().map(Card::rank).toList();
-    if (ranks.equals(List.of(14, 3, 2))) return input.equals(List.of(14, 2, 3)) ? List.of(3) : null;
-    if (ranks.get(0) == ranks.get(1) + 1 && ranks.get(1) == ranks.get(2) + 1) return List.of(ranks.get(0));
+  private static List<Integer> sequenceRanks(List<Integer> ranks) {
+    if (ranks.equals(List.of(14, 3, 2))) return List.of(13, 1);
+    if (ranks.get(0) == ranks.get(1) + 1 && ranks.get(1) == ranks.get(2) + 1) return List.of(ranks.get(0), 0);
     return null;
   }
 

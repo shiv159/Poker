@@ -51,7 +51,7 @@ async def main():
         assert await guest.locator(".my-cards pn-playing-card").count() == 3
         assert await host.locator(".turn-card.your-turn").count() + await guest.locator(".turn-card.your-turn").count() == 1
 
-        await host.get_by_role("button", name="SHARE INVITE").click()
+        await host.get_by_role("button", name="Share table invite link").click()
         assert await host.locator(".invite-popover").count() == 1
         invite = await host.locator(".invite-popover input").input_value()
         assert f"table={table_code}" in invite
@@ -60,7 +60,7 @@ async def main():
         assert await host.locator(".invite-popover").count() == 1
 
         turn_page = host if await host.locator(".turn-card.your-turn").count() else guest
-        await turn_page.get_by_role("button", name="VIEW PRIVATE CARDS").click()
+        await turn_page.get_by_role("button", name="View private hole cards").click()
         assert await turn_page.locator(".invite-popover").count() == 0
         await turn_page.get_by_role("button", name="CHAAL").click()
         for _ in range(60):

@@ -4,7 +4,7 @@ import com.pokernight.table.SeatState;
 import java.util.List;
 import java.util.function.Supplier;
 
-/** Selects the first connected eligible seat receiving a Jack or Joker. */
+/** Selects the first connected eligible seat receiving a Jack. */
 public final class JackDealer {
   private JackDealer() {}
 
@@ -21,7 +21,7 @@ public final class JackDealer {
         continue;
       }
       SeatState seat = seats.get(seatIndex++ % seats.size());
-      if ((card.rank() == 11 || card.rank() == 15) && seat.connected && seat.active()) return seat.playerId;
+      if (card.rank() == 11 && seat.connected && seat.active()) return seat.playerId;
       // Cards dealt to disconnected/ineligible seats are intentionally discarded.
     }
     throw new IllegalStateException("JACK_DEAL_DID_NOT_CONVERGE");

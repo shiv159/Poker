@@ -4,6 +4,7 @@ COPY package*.json ./
 RUN npm ci
 COPY . .
 RUN npm run build
+RUN css_file=$(find /app/dist/poker-night/browser -maxdepth 1 -name 'styles-*.css' -print -quit) && test -n "$css_file" && cp "$css_file" /app/dist/poker-night/browser/styles.css
 
 FROM nginx:1.27-alpine
 ARG BACKEND_URL=http://backend:8080

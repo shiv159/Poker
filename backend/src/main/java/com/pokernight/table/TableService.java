@@ -13,7 +13,7 @@ import java.time.Duration;
 
 @Service
 public class TableService {
-  private static final String COMMIT_SCRIPT = "local current=redis.call('GET',KEYS[1]); if current~=ARGV[1] then return -1 end; if redis.call('SISMEMBER',KEYS[2],ARGV[2])==1 then return 0 end; redis.call('SET',KEYS[1],ARGV[3]); redis.call('SADD',KEYS[2],ARGV[2]); redis.call('XADD',KEYS[3],'*','action_id',ARGV[2],'actor',ARGV[4],'type',ARGV[5],'state_version',ARGV[6]); if ARGV[7]~='' then redis.call('XADD',KEYS[4],'*','type',ARGV[7],'actor',ARGV[4],'amount',ARGV[8],'action_id',ARGV[2]) end; if ARGV[9]~='' then redis.call('XADD',KEYS[4],'*','type',ARGV[9],'actor',ARGV[4],'amount',ARGV[10],'action_id',ARGV[2]..':secondary') end; return 1";
+  private static final String COMMIT_SCRIPT = "local current=redis.call('GET',KEYS[1]); if current~=ARGV[1] then return -1 end; if redis.call('SISMEMBER',KEYS[2],ARGV[2])==1 then return 0 end; redis.call('SET',KEYS[1],ARGV[3]); redis.call('SADD',KEYS[2],ARGV[2]); redis.call('XADD',KEYS[3],'*','action_id',ARGV[2],'actor',ARGV[4],'type',ARGV[5],'state_version',ARGV[6]); if ARGV[7]~='' then redis.call('XADD',KEYS[4],'*','type',ARGV[7],'actor',ARGV[11],'amount',ARGV[8],'action_id',ARGV[2]) end; if ARGV[9]~='' then redis.call('XADD',KEYS[4],'*','type',ARGV[9],'actor',ARGV[11],'amount',ARGV[10],'action_id',ARGV[2]..':secondary') end; return 1";
   private static final String RELEASE_LOCK_SCRIPT = "if redis.call('GET',KEYS[1])==ARGV[1] then return redis.call('DEL',KEYS[1]) else return 0 end";
   private final StringRedisTemplate redis;
   private final ObjectMapper json;
@@ -113,7 +113,7 @@ public class TableService {
     applyAction(state, actor, type, action);
     state.stateVersion++;
     state.lastActivity = Instant.now().toString();
-    if (commit(original, encode(state), actorId, actionId, type, state.stateVersion, ledgerType(type, state), ledgerAmount(type, state, balanceBefore, actor.balance), secondaryLedgerType(type), Math.max(0, state.hand == null ? 0 : state.hand.pot - potBefore)) == 0) return publicSnapshot(load(tableId), actorId);
+    if (commit(original, encode(state), actorId, actionId, type, state.stateVersion, ledgerType(type, state), ledgerAmount(type, state, balanceBefore, actor.balance), secondaryLedgerType(type, state), secondaryLedgerAmount(type, state, potBefore), ledgerActor(state, type, actorId)) == 0) return publicSnapshot(load(tableId), actorId);
     return publicSnapshot(state, actorId);
   }
 
@@ -133,7 +133,7 @@ public class TableService {
     if (expired(state.hand)) { fold(state, actor); return; }
     if (state.hand.currentSeat != actor.seat) throw new IllegalStateException("NOT_YOUR_TURN");
     switch (type) {
-      case "VIEW_CARDS" -> { actor.viewed = true; actor.betStatus = BetStatus.SEEN; }
+      case "VIEW_CARDS" -> { actor.viewed = true; actor.betStatus = BetStatus.SEEN; recordSeatAction(actor, "VIEW_CARDS", 0, state.stateVersion + 1); }
       case "CHAAL", "BLIND" -> wager(state, actor, false, 0);
       case "RAISE" -> wager(state, actor, true, (int) number(action.getOrDefault("raiseAmount", 5)));
       case "FOLD" -> fold(state, actor);
@@ -159,7 +159,7 @@ public class TableService {
       default -> 3;
     };
     for (SeatState seat : eligible) {
-      seat.privateCards = deck.draw(privateCardCount); seat.balance -= state.boot; seat.contribution = state.boot; seat.betStatus = BetStatus.BLIND; seat.viewed = false; seat.blindTurns = 0; seat.actedThisHand = false;
+      seat.privateCards = deck.draw(privateCardCount); seat.balance -= state.boot; seat.contribution = state.boot; seat.betStatus = BetStatus.BLIND; seat.viewed = false; seat.blindTurns = 0; seat.actedThisHand = false; recordSeatAction(seat, "BOOT", state.boot, state.stateVersion + 1);
       hand.pot += state.boot; hand.contributions.put(seat.playerId, state.boot);
     }
     if (variant == GameVariant.SWAP || variant == GameVariant.COMPULSORY_THIRD || variant == GameVariant.EXCHANGE_AND_FOLD) hand.communityCards = deck.draw(variant == GameVariant.EXCHANGE_AND_FOLD ? 3 : 1);
@@ -176,7 +176,7 @@ public class TableService {
     if (actor.balance < due) throw new IllegalStateException("INSUFFICIENT_BALANCE");
     actor.balance -= due; actor.contribution += due; state.hand.pot += due; state.hand.contributions.put(actor.playerId, actor.contribution);
     if (actor.betStatus == BetStatus.BLIND) actor.blindTurns++;
-    actor.actedThisHand = true;
+    actor.actedThisHand = true; recordSeatAction(actor, raise ? "RAISE" : "CHAAL", due, state.stateVersion + 1);
     advanceTurn(state);
   }
   private void fundAndWager(TableState state, SeatState actor) {
@@ -191,7 +191,7 @@ public class TableService {
     if (state.activeSeats().size() != 2) throw new IllegalStateException("SHOW_REQUIRES_TWO_PLAYERS");
     if (!caller.actedThisHand) throw new IllegalStateException("SHOW_NOT_FIRST_ACTION");
     int fee = state.hand.currentChaal * 2; if (caller.balance < fee) throw new IllegalStateException("INSUFFICIENT_BALANCE");
-    caller.balance -= fee; caller.contribution += fee; state.hand.pot += fee;
+    caller.balance -= fee; caller.contribution += fee; state.hand.pot += fee; recordSeatAction(caller, "SHOW", fee, state.stateVersion + 1);
     List<SeatState> active = state.activeSeats(); SeatState other = active.getFirst().playerId.equals(caller.playerId) ? active.get(1) : active.getFirst();
     EvaluatedHand a = VariantEvaluator.evaluate(state.hand.variant, caller.privateCards, state.hand.communityCards, state.hand.referenceCard);
     EvaluatedHand b = VariantEvaluator.evaluate(state.hand.variant, other.privateCards, state.hand.communityCards, state.hand.referenceCard);
@@ -204,19 +204,22 @@ public class TableService {
     if (!requester.actedThisHand) throw new IllegalStateException("SIDESHOW_NOT_FIRST_ACTION");
     if (state.hand.pendingSideshowRequesterId != null) throw new IllegalStateException("SIDESHOW_ALREADY_PENDING");
     int fee = state.hand.currentChaal * 2; if (requester.balance < fee) throw new IllegalStateException("INSUFFICIENT_BALANCE");
-    SeatState responder = SeatOrder.previousSeat(state, requester); requester.balance -= fee; requester.contribution += fee; state.hand.pot += fee; state.hand.sideshowFeePayerId = requester.playerId; state.hand.sideshowFeeAmount = fee; state.hand.pendingSideshowRequesterId = requester.playerId; state.hand.pendingSideshowResponderId = responder.playerId; state.hand.currentSeat = responder.seat; setDeadline(state.hand);
+    SeatState responder = SeatOrder.previousSeat(state, requester); requester.balance -= fee; requester.contribution += fee; state.hand.pot += fee; recordSeatAction(requester, "SIDESHOW", fee, state.stateVersion + 1); state.hand.sideshowFeePayerId = requester.playerId; state.hand.sideshowFeeAmount = fee; state.hand.pendingSideshowRequesterId = requester.playerId; state.hand.pendingSideshowResponderId = responder.playerId; state.hand.currentSeat = responder.seat; setDeadline(state.hand);
   }
 
   private void sideshowResponse(TableState state, SeatState responder, boolean accept) {
     if (!Objects.equals(state.hand.pendingSideshowResponderId, responder.playerId)) throw new IllegalStateException("SIDESHOW_RESPONSE_NOT_ALLOWED");
     SeatState requester = state.seatFor(state.hand.pendingSideshowRequesterId); state.hand.pendingSideshowRequesterId = null; state.hand.pendingSideshowResponderId = null;
-    if (!accept) { SeatState payer = state.seatFor(state.hand.sideshowFeePayerId); if (payer != null) { payer.balance += state.hand.sideshowFeeAmount; payer.contribution -= state.hand.sideshowFeeAmount; state.hand.pot -= state.hand.sideshowFeeAmount; } state.hand.sideshowFeePayerId = null; state.hand.sideshowFeeAmount = 0; state.hand.currentSeat = requester.seat; setDeadline(state.hand); return; }
+    if (!accept) { SeatState payer = state.seatFor(state.hand.sideshowFeePayerId); if (payer != null) { payer.balance += state.hand.sideshowFeeAmount; payer.contribution -= state.hand.sideshowFeeAmount; state.hand.pot -= state.hand.sideshowFeeAmount; } recordSeatAction(responder, "SIDESHOW_REFUSE", 0, state.stateVersion + 1); state.hand.sideshowFeePayerId = null; state.hand.sideshowFeeAmount = 0; state.hand.currentSeat = requester.seat; setDeadline(state.hand); return; }
     if (accept) {
       EvaluatedHand requesterHand = VariantEvaluator.evaluate(state.hand.variant, requester.privateCards, state.hand.communityCards, state.hand.referenceCard); EvaluatedHand responderHand = VariantEvaluator.evaluate(state.hand.variant, responder.privateCards, state.hand.communityCards, state.hand.referenceCard);
-      if (requesterHand.compareTo(responderHand) <= 0) requester.betStatus = BetStatus.FOLDED; else responder.betStatus = BetStatus.FOLDED;
+      if (requesterHand.compareTo(responderHand) <= 0) { requester.betStatus = BetStatus.FOLDED; state.hand.sideshowResultWinnerId = responder.playerId; state.hand.sideshowResultLoserId = requester.playerId; } else { responder.betStatus = BetStatus.FOLDED; state.hand.sideshowResultWinnerId = requester.playerId; state.hand.sideshowResultLoserId = responder.playerId; } recordSeatAction(responder, "SIDESHOW_ACCEPT", 0, state.stateVersion + 1);
     }
     state.hand.sideshowFeePayerId = null; state.hand.sideshowFeeAmount = 0;
-    if (state.activeSeats().size() <= 1) complete(state, state.activeSeats().getFirst()); else { state.hand.currentSeat = requester.seat; advanceTurn(state); }
+    if (state.activeSeats().isEmpty()) { state.hand.status = "CANCELED"; state.status = TableStatus.WAITING_FOR_PLAYERS; }
+    else if (state.activeSeats().size() == 1) complete(state, state.activeSeats().getFirst());
+    else if (requester.betStatus == BetStatus.FOLDED) advanceTurn(state);
+    else { state.hand.currentSeat = requester.seat; setDeadline(state.hand); }
   }
 
   private void establishDealer(TableState state, List<SeatState> eligible) {
@@ -225,7 +228,7 @@ public class TableService {
   }
   private int firstSeatAfterDealer(TableState state, List<SeatState> eligible) { return SeatOrder.clockwiseActive(state).stream().findFirst().map(s -> s.seat).orElse(eligible.getFirst().seat); }
 
-  private void fold(TableState state, SeatState actor) { int next = SeatOrder.nextSeat(state, actor.seat); if (state.hand != null && state.hand.variant == GameVariant.EXCHANGE_AND_FOLD) state.hand.communityCards = new ArrayList<>(actor.privateCards); if (Objects.equals(state.hand.pendingSideshowResponderId, actor.playerId)) { SeatState payer = state.seatFor(state.hand.sideshowFeePayerId); if (payer != null) { payer.balance += state.hand.sideshowFeeAmount; payer.contribution -= state.hand.sideshowFeeAmount; state.hand.pot -= state.hand.sideshowFeeAmount; } } state.hand.pendingSideshowRequesterId = null; state.hand.pendingSideshowResponderId = null; actor.betStatus = BetStatus.FOLDED; if (state.activeSeats().isEmpty()) { state.hand.status = "CANCELED"; state.status = TableStatus.WAITING_FOR_PLAYERS; } else if (state.activeSeats().size() == 1) complete(state, state.activeSeats().getFirst()); else { state.hand.currentSeat = next; advanceTurn(state); } }
+  private void fold(TableState state, SeatState actor) { int next = SeatOrder.nextSeat(state, actor.seat); if (state.hand != null && state.hand.variant == GameVariant.EXCHANGE_AND_FOLD) state.hand.communityCards = new ArrayList<>(actor.privateCards); if (Objects.equals(state.hand.pendingSideshowResponderId, actor.playerId)) { SeatState payer = state.seatFor(state.hand.sideshowFeePayerId); if (payer != null) { payer.balance += state.hand.sideshowFeeAmount; payer.contribution -= state.hand.sideshowFeeAmount; state.hand.pot -= state.hand.sideshowFeeAmount; } } state.hand.pendingSideshowRequesterId = null; state.hand.pendingSideshowResponderId = null; actor.betStatus = BetStatus.FOLDED; recordSeatAction(actor, "FOLD", 0, state.stateVersion + 1); if (state.activeSeats().isEmpty()) { state.hand.status = "CANCELED"; state.status = TableStatus.WAITING_FOR_PLAYERS; } else if (state.activeSeats().size() == 1) complete(state, state.activeSeats().getFirst()); else { int previous = state.hand.currentSeat; state.hand.currentSeat = next; if (SeatOrder.clockwiseDistance(state, next) <= SeatOrder.clockwiseDistance(state, previous)) state.hand.completedRounds++; if (state.hand.completedRounds >= state.maxBettingRounds) forceShowdown(state); else setDeadline(state.hand); } }
 
   private void advanceTurn(TableState state) {
     List<SeatState> active = SeatOrder.clockwiseActive(state); if (active.isEmpty()) { state.status = TableStatus.WAITING_FOR_PLAYERS; state.hand.status = "CANCELED"; return; }
@@ -243,13 +246,13 @@ public class TableService {
 
   private void complete(TableState state, SeatState winner) { settle(state, List.of(winner)); }
   private void settle(TableState state, List<SeatState> winners) { if (winners.isEmpty()) { state.hand.status = "CANCELED"; state.status = TableStatus.WAITING_FOR_PLAYERS; return; } int share = state.hand.pot / winners.size(); int remainder = state.hand.pot % winners.size(); List<SeatState> ordered = new ArrayList<>(winners); ordered.sort(Comparator.comparingInt(s -> SeatOrder.clockwiseDistance(state, s.seat))); for (int i=0; i<ordered.size(); i++) ordered.get(i).balance += share + (i < remainder ? 1 : 0); state.hand.settledPot = state.hand.pot; state.hand.pot = 0; state.hand.status = "COMPLETED"; state.hand.winnerId = ordered.getFirst().playerId; state.dealerId = ordered.getFirst().playerId; state.nextGameDeadline = Instant.now().plusSeconds(30).toString(); state.status = TableStatus.WAITING_FOR_PLAYERS; for (SeatState seat : state.seats) { seat.contribution = 0; seat.actedThisHand = false; if (seat.status == SeatStatus.SPECTATOR && seat.connected) seat.status = SeatStatus.ELIGIBLE; else if (seat.status != SeatStatus.SITTING_OUT) seat.status = seat.connected ? SeatStatus.ELIGIBLE : SeatStatus.SITTING_OUT; } }
-  private void allocateBank(TableState state, SeatState actor) { if (state.bank < 100) throw new IllegalStateException("BANK_EXHAUSTED"); if (actor.balance - 100 < -1000) throw new IllegalStateException("DEBT_LIMIT_REACHED"); state.bank -= 100; actor.balance += 100; }
+  private void allocateBank(TableState state, SeatState actor) { if (state.bank < 100) throw new IllegalStateException("BANK_EXHAUSTED"); if (actor.balance + 100 < -1000) throw new IllegalStateException("DEBT_LIMIT_REACHED"); state.bank -= 100; actor.balance += 100; }
   private void allocateInitial(TableState state, SeatState seat) { state.bank -= 100; seat.balance = 100; }
   private void requestTransfer(TableState state, SeatState requester, String targetId) {
     if (state.pendingTransferRequesterId != null) throw new IllegalStateException("TRANSFER_ALREADY_PENDING");
     SeatState giver = state.seatFor(targetId);
     if (giver == null || giver.playerId.equals(requester.playerId) || !giver.connected || giver.balance < 100) throw new IllegalStateException("TRANSFER_NOT_ALLOWED");
-    if (requester.balance - 100 < -1000) throw new IllegalStateException("DEBT_LIMIT_REACHED");
+    if (requester.balance + 100 < -1000) throw new IllegalStateException("DEBT_LIMIT_REACHED");
     state.pendingTransferRequesterId = requester.playerId; state.pendingTransferGiverId = giver.playerId;
   }
   private void consentTransfer(TableState state, SeatState giver, boolean accept) {
@@ -257,7 +260,7 @@ public class TableService {
     SeatState requester = state.seatFor(state.pendingTransferRequesterId);
     state.pendingTransferRequesterId = null; state.pendingTransferGiverId = null;
     if (!accept) return;
-    if (requester == null || giver.balance < 100 || requester.balance - 100 < -1000) throw new IllegalStateException("TRANSFER_NOT_ALLOWED");
+    if (requester == null || giver.balance < 100 || requester.balance + 100 < -1000) throw new IllegalStateException("TRANSFER_NOT_ALLOWED");
     giver.balance -= 100; requester.balance += 100; requester.debt += 100;
     if (state.hand != null && "IN_PROGRESS".equals(state.hand.status) && state.hand.currentSeat == requester.seat && !expired(state.hand)) wager(state, requester, false, 0);
   }
@@ -267,11 +270,12 @@ public class TableService {
   private SeatState addSeat(TableState state, String playerId, String name, int seat) { SeatState result = new SeatState(seat, playerId, name, 0); state.seats.add(result); return result; }
   private TableState load(String id) { try { String value = redis.opsForValue().get(key(id)); if (value == null) throw new IllegalArgumentException("TABLE_NOT_FOUND"); return json.readValue(value, TableState.class); } catch (RuntimeException e) { throw e; } catch (Exception e) { throw new IllegalStateException("TABLE_STATE_UNREADABLE", e); } }
   private void save(TableState state) { redis.opsForValue().set(key(state.tableId), encode(state)); }
-  private long commit(String original, String next, String actor, String actionId, String type, long version, String ledgerType, int ledgerAmount, String secondaryType, int secondaryAmount) { Long result = redis.execute(commitScript, List.of(keyFromState(next), acceptedKeyFromState(next), actionsKeyFromState(next), ledgerKeyFromState(next)), original, actionId, next, actor, type, String.valueOf(version), ledgerType, String.valueOf(ledgerAmount), secondaryType, String.valueOf(secondaryAmount)); if (result == null || result == -1) throw new IllegalStateException("STALE_STATE_REJECTED"); return result; }
-  private String ledgerType(String action, TableState state) { if (state.hand != null && "COMPLETED".equals(state.hand.status)) return "POT_WIN"; return switch (action) { case "BANK_ALLOCATE", "FUND_AND_WAGER" -> "BANK_ALLOCATION"; case "PLAYER_TRANSFER", "PLAYER_TRANSFER_CONSENT" -> "PLAYER_TRANSFER"; case "SHOW" -> "SHOW_FEE"; case "SIDESHOW" -> "SIDESHOW_FEE"; case "CHAAL", "RAISE" -> "BET"; default -> ""; }; }
-  private String secondaryLedgerType(String action) { return action.equals("FUND_AND_WAGER") || action.equals("PLAYER_TRANSFER_CONSENT") ? "BET" : ""; }
+  private long commit(String original, String next, String actor, String actionId, String type, long version, String ledgerType, int ledgerAmount, String secondaryType, int secondaryAmount, String ledgerActor) { Long result = redis.execute(commitScript, List.of(keyFromState(next), acceptedKeyFromState(next), actionsKeyFromState(next), ledgerKeyFromState(next)), original, actionId, next, actor, type, String.valueOf(version), ledgerType, String.valueOf(ledgerAmount), secondaryType, String.valueOf(secondaryAmount), ledgerActor); if (result == null || result == -1) throw new IllegalStateException("STALE_STATE_REJECTED"); return result; }
+  private String ledgerType(String action, TableState state) { if (state.hand != null && "COMPLETED".equals(state.hand.status) && !action.equals("SHOW")) return "POT_WIN"; return switch (action) { case "BANK_ALLOCATE", "FUND_AND_WAGER" -> "BANK_ALLOCATION"; case "PLAYER_TRANSFER", "PLAYER_TRANSFER_CONSENT" -> "PLAYER_TRANSFER"; case "SHOW" -> "SHOW_FEE"; case "SIDESHOW" -> "SIDESHOW_FEE"; case "CHAAL", "RAISE" -> "BET"; default -> ""; }; }
+  private String secondaryLedgerType(String action, TableState state) { if (action.equals("SHOW") && state.hand != null && "COMPLETED".equals(state.hand.status)) return "POT_WIN"; return action.equals("FUND_AND_WAGER") || action.equals("PLAYER_TRANSFER_CONSENT") ? "BET" : ""; }
+  private int secondaryLedgerAmount(String action, TableState state, int potBefore) { return "POT_WIN".equals(secondaryLedgerType(action, state)) ? state.hand.settledPot : Math.max(0, state.hand == null ? 0 : state.hand.pot - potBefore); }
+  private String ledgerActor(TableState state, String action, String actorId) { return state.hand != null && "COMPLETED".equals(state.hand.status) ? state.hand.winnerId : actorId; }
   private int ledgerAmount(String action, TableState state, int balanceBefore, int balanceAfter) {
-    if (state.hand != null && "COMPLETED".equals(state.hand.status)) return state.hand.settledPot;
     if (action.equals("BANK_ALLOCATE") || action.equals("PLAYER_TRANSFER")) return 100;
     return Math.max(0, balanceBefore - balanceAfter);
   }
@@ -287,7 +291,8 @@ public class TableService {
   private String actionsKeyFromState(String encoded) { try { return actionsKey(json.readTree(encoded).get("tableId").asText()); } catch (Exception e) { throw new IllegalStateException(e); } }
   private String ledgerKeyFromState(String encoded) { try { return ledgerKey(json.readTree(encoded).get("tableId").asText()); } catch (Exception e) { throw new IllegalStateException(e); } }
   private String encode(TableState state) { try { return json.writeValueAsString(state); } catch (Exception e) { throw new IllegalStateException("TABLE_STATE_UNWRITABLE", e); } }
-  private Map<String,Object> publicSnapshot(TableState state, String actorId) { Map<String,Object> table = new LinkedHashMap<>(); table.put("tableId",state.tableId); table.put("name",state.name); table.put("hostId",state.hostId); table.put("status",state.status); table.put("boot",state.boot); table.put("bank",state.bank); table.put("stateVersion",state.stateVersion); table.put("dealerId",state.dealerId); table.put("selectedVariant",state.selectedVariant); List<Map<String,Object>> seats = new ArrayList<>(); boolean reveal = state.hand != null && state.hand.allCardsRevealed; for (SeatState seat : state.seats) { Map<String,Object> view = new LinkedHashMap<>(); view.put("seat",seat.seat); view.put("playerId",seat.playerId); view.put("displayName",seat.displayName); view.put("balance",seat.balance); view.put("debt",seat.debt); view.put("status",seat.status); view.put("connected",seat.connected); view.put("privateCardCount",seat.privateCards.size()); boolean showCards = reveal || (Objects.equals(actorId, seat.playerId) && seat.viewed); view.put("cardsHidden", !showCards && !seat.privateCards.isEmpty()); if (showCards) view.put("privateCards",seat.privateCards); seats.add(view); } Map<String,Object> response = new LinkedHashMap<>(); response.put("table",table); response.put("seats",seats); response.put("hand",state.hand); response.put("pendingTransfer", state.pendingTransferRequesterId == null ? null : Map.of("requesterId", state.pendingTransferRequesterId, "giverId", state.pendingTransferGiverId)); return response; }
+  private void recordSeatAction(SeatState seat, String action, int amount, long version) { seat.lastAction = action; seat.lastActionAmount = amount; seat.lastActionVersion = version; }
+  private Map<String,Object> publicSnapshot(TableState state, String actorId) { Map<String,Object> table = new LinkedHashMap<>(); table.put("tableId",state.tableId); table.put("name",state.name); table.put("hostId",state.hostId); table.put("status",state.status); table.put("boot",state.boot); table.put("bank",state.bank); table.put("stateVersion",state.stateVersion); table.put("dealerId",state.dealerId); table.put("selectedVariant",state.selectedVariant); List<Map<String,Object>> seats = new ArrayList<>(); boolean reveal = state.hand != null && state.hand.allCardsRevealed; for (SeatState seat : state.seats) { Map<String,Object> view = new LinkedHashMap<>(); view.put("seat",seat.seat); view.put("playerId",seat.playerId); view.put("displayName",seat.displayName); view.put("balance",seat.balance); view.put("debt",seat.debt); view.put("status",seat.status); view.put("connected",seat.connected); view.put("betStatus",seat.betStatus); view.put("contribution",seat.contribution); view.put("lastAction",seat.lastAction); view.put("lastActionAmount",seat.lastActionAmount); view.put("lastActionVersion",seat.lastActionVersion); view.put("privateCardCount",seat.privateCards.size()); boolean showCards = reveal || (Objects.equals(actorId, seat.playerId) && seat.viewed); view.put("cardsHidden", !showCards && !seat.privateCards.isEmpty()); if (showCards) view.put("privateCards",seat.privateCards); seats.add(view); } Map<String,Object> response = new LinkedHashMap<>(); response.put("table",table); response.put("seats",seats); response.put("hand",state.hand); response.put("pendingTransfer", state.pendingTransferRequesterId == null ? null : Map.of("requesterId", state.pendingTransferRequesterId, "giverId", state.pendingTransferGiverId)); return response; }
   private Map<String,Object> withSession(Map<String,Object> snapshot, String tableId, String playerId) { String token = UUID.randomUUID().toString(); redis.opsForValue().set("table:" + tableId + ":session:" + token, playerId, Duration.ofHours(8)); snapshot.put("sessionToken", token); return snapshot; }
   private long number(Object value) { return value instanceof Number n ? n.longValue() : Long.parseLong(String.valueOf(value)); }
   private String key(String id) { return "table:" + id + ":state"; } private String acceptedKey(String id) { return "table:" + id + ":accepted_actions"; } private String actionsKey(String id) { return "table:" + id + ":actions"; } private String ledgerKey(String id) { return "table:" + id + ":ledger"; }

@@ -1,0 +1,114 @@
+name: Deploy to Google Cloud Run
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: cloud-run-production
+  cancel-in-progress: true
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID || secrets.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+  REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY || 'poker-night' }}
+  BACKEND_SERVICE: ${{ vars.GCP_BACKEND_SERVICE || 'poker-night-backend' }}
+  FRONTEND_SERVICE: ${{ vars.GCP_FRONTEND_SERVICE || 'poker-night-frontend' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${{ env.REGION }}-docker.pkg.dev" --quiet
+
+      - name: Ensure required APIs and repository exist
+        run: |
+          gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com
+          gcloud artifacts repositories describe "$REPOSITORY" \
+            --location="$REGION" >/dev/null 2>&1 || \
+          gcloud artifacts repositories create "$REPOSITORY" \
+            --repository-format=docker \
+            --location="$REGION" \
+            --description="Poker Night container images"
+
+      - name: Set image names
+        run: |
+          echo "REGISTRY=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=${GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Package backend
+        run: mvn -DskipTests package
+        working-directory: backend
+
+      - name: Build and push backend image
+        run: |
+          docker build -t "$REGISTRY/backend:$IMAGE_TAG" ./backend
+          docker push "$REGISTRY/backend:$IMAGE_TAG"
+
+      - name: Deploy backend
+        id: backend
+        run: |
+          gcloud run deploy "$BACKEND_SERVICE" \
+            --image="$REGISTRY/backend:$IMAGE_TAG" \
+            --region="$REGION" \
+            --platform=managed \
+            --allow-unauthenticated \
+            --set-env-vars="REDIS_URL=${{ secrets.REDIS_URL }}"
+          echo "BACKEND_URL=$(gcloud run services describe "$BACKEND_SERVICE" --region="$REGION" --format='value(status.url)')" >> "$GITHUB_ENV"
+
+      - name: Build and push frontend image
+        run: |
+          docker build \
+            --build-arg BACKEND_URL="$BACKEND_URL" \
+            -t "$REGISTRY/frontend:$IMAGE_TAG" ./frontend
+          docker push "$REGISTRY/frontend:$IMAGE_TAG"
+
+      - name: Deploy frontend
+        id: frontend
+        run: |
+          gcloud run deploy "$FRONTEND_SERVICE" \
+            --image="$REGISTRY/frontend:$IMAGE_TAG" \
+            --region="$REGION" \
+            --platform=managed \
+            --allow-unauthenticated
+
+      - name: Restrict backend origins to deployed frontend
+        run: |
+          FRONTEND_URL=$(gcloud run services describe "$FRONTEND_SERVICE" --region="$REGION" --format='value(status.url)')
+          gcloud run services update "$BACKEND_SERVICE" \
+            --region="$REGION" \
+            --update-env-vars="CORS_ORIGINS=$FRONTEND_URL,WEBSOCKET_ALLOWED_ORIGINS=$FRONTEND_URL"
+
+      - name: Smoke check deployed services
+        run: |
+          FRONTEND_URL=$(gcloud run services describe "$FRONTEND_SERVICE" --region="$REGION" --format='value(status.url)')
+          BACKEND_URL=$(gcloud run services describe "$BACKEND_SERVICE" --region="$REGION" --format='value(status.url)')
+          curl --fail --silent --show-error "$BACKEND_URL/api/tables/health"
+          curl --fail --silent --show-error "$FRONTEND_URL/" >/dev/null
+          echo "Frontend: $FRONTEND_URL"
+          echo "Backend: $BACKEND_URL"

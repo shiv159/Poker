@@ -19,8 +19,12 @@ export class AppComponent implements OnDestroy {
   imBack(): void { this.act('IM_BACK'); }
   raiseAmount = 5;
   selectVariant(): void { this.act('START_NEXT_HAND'); }
-  chooseVariant(value: string): void { this.variant = value; const hand = this.game.snapshot()?.hand; if (this.isDealer() && (!hand || hand.status === 'COMPLETED')) this.act('SET_VARIANT', { variant: value }); }
+  chooseVariant(value: string): void { this.variant = value; const snapshot = this.game.snapshot(); const hand = snapshot?.hand; if (this.isDealer() && (!hand || hand.status === 'COMPLETED')) { if (snapshot) this.game.snapshot.set({ ...snapshot, table: { ...snapshot.table, selectedVariant: value } }); this.act('SET_VARIANT', { variant: value }); } }
   isSideshowResponder(): boolean { return this.game.snapshot()?.hand?.pendingSideshowResponderId === this.playerId; }
+  isSideshowRequester(): boolean { return this.game.snapshot()?.hand?.pendingSideshowRequesterId === this.playerId; }
+  sideshowPrompt(): string { const hand = this.game.snapshot()?.hand; const requester = this.game.snapshot()?.seats.find(seat => seat.playerId === hand?.pendingSideshowRequesterId)?.displayName ?? 'A player'; const responder = this.game.snapshot()?.seats.find(seat => seat.playerId === hand?.pendingSideshowResponderId)?.displayName ?? 'the responder'; return this.isSideshowResponder() ? `${requester} requested a sideshow. Accept to compare hands privately — the loser folds. An exact tie folds ${requester}.` : `${requester} requested a sideshow · waiting for ${responder} to respond…`; }
+  actionLabel(seat: Seat): string { const amount = seat.lastActionAmount ?? 0; switch (seat.lastAction) { case 'CHAAL': return `CHAAL ${amount}`; case 'RAISE': return `RAISE +${amount}`; case 'FOLD': return 'FOLDED'; case 'SIDESHOW': return 'SIDESHOW'; case 'SIDESHOW_ACCEPT': return 'ACCEPTED'; case 'SIDESHOW_REFUSE': return 'REFUSED'; case 'VIEW_CARDS': return 'SEEN'; case 'BOOT': return `BOOT ${amount}`; case 'SHOW': return 'SHOW'; default: return ''; } }
+  isRecentAction(seat: Seat): boolean { const version = this.game.snapshot()?.table?.['stateVersion']; return !!seat.lastAction && version !== undefined && (version - (seat.lastActionVersion ?? 0)) <= 2; }
   isMyTurn(): boolean { return this.isHandActive() && this.game.snapshot()?.hand?.currentSeat === this.mySeat()?.seat; }
   isHandActive(): boolean { return this.game.snapshot()?.hand?.status === 'IN_PROGRESS'; }
   mySeat(): Seat | undefined { return this.game.snapshot()?.seats.find(seat => seat.playerId === this.playerId); }
